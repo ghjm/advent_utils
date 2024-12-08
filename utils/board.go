@@ -5,37 +5,63 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-type Board[T constraints.Integer] struct {
-	contents Map2D[T, rune]
-	bounds   *Rectangle[T]
-	emptyVal rune
+type Board[KT constraints.Integer, VT any] struct {
+	contents Map2D[KT, VT]
+	bounds   *Rectangle[KT]
+	emptyVal VT
+	convFunc func(uint8) VT
+	compFunc func(VT, VT) bool
 }
 
-func (b *Board[T]) SetEmptyVal(ev rune) {
-	b.emptyVal = ev
+type StandardBoard struct {
+	Board[int, rune]
 }
 
-func (b *Board[T]) SetBounds(x1, x2, y1, y2 T) {
-	b.bounds = &Rectangle[T]{
-		Point[T]{x1, y1},
-		Point[T]{x2, y2},
+func NewBoard[KT constraints.Integer, VT any](emptyVal VT, convFunc func(uint8) VT, compFunc func(VT, VT) bool) *Board[KT, VT] {
+	b := Board[KT, VT]{}
+	b.emptyVal = emptyVal
+	b.convFunc = convFunc
+	b.compFunc = compFunc
+	return &b
+}
+
+func NewRuneBoard[KT constraints.Integer](emptyVal rune) *Board[KT, rune] {
+	return NewBoard[KT, rune](emptyVal,
+		func(v uint8) rune {
+			return rune(v)
+		},
+		func(v1 rune, v2 rune) bool {
+			return v1 == v2
+		})
+}
+
+func NewStandardBoard() *StandardBoard {
+	return &StandardBoard{
+		Board: *NewRuneBoard[int]('.'),
 	}
 }
 
-func (b *Board[T]) ClearBounds() {
+func (b *Board[KT, VT]) SetBounds(x1, x2, y1, y2 KT) {
+	b.bounds = &Rectangle[KT]{
+		Point[KT]{x1, y1},
+		Point[KT]{x2, y2},
+	}
+}
+
+func (b *Board[KT, VT]) ClearBounds() {
 	b.bounds = nil
 }
 
-func (b *Board[T]) Transform(tFunc func(p Point[T], v rune) rune) {
-	type change[T constraints.Integer] struct {
-		p Point[T]
-		v rune
+func (b *Board[KT, VT]) Transform(tFunc func(p Point[KT], v VT) VT) {
+	type change[KT constraints.Integer] struct {
+		p Point[KT]
+		v VT
 	}
-	var changes []change[T]
-	b.contents.Iterate(func(p Point[T], v rune) bool {
+	var changes []change[KT]
+	b.contents.Iterate(func(p Point[KT], v VT) bool {
 		ch := tFunc(p, v)
-		if ch != v {
-			changes = append(changes, change[T]{p, ch})
+		if !b.compFunc(ch, v) {
+			changes = append(changes, change[KT]{p, ch})
 		}
 		return true
 	})
@@ -44,37 +70,41 @@ func (b *Board[T]) Transform(tFunc func(p Point[T], v rune) rune) {
 	}
 }
 
-func (b *Board[T]) FromStrings(s []string, emptyVal rune) error {
-	var x, y T
-	b.emptyVal = emptyVal
-	for y = 0; y < T(len(s)); y++ {
+func (b *Board[KT, VT]) FromStrings(s []string) error {
+	if b.convFunc == nil {
+		return fmt.Errorf("board conversion function not initialized")
+	}
+	var x, y KT
+	for y = 0; y < KT(len(s)); y++ {
 		if len(s[y]) != len(s[0]) {
 			return fmt.Errorf("line lengths not uniform")
 		}
-		for x = 0; x < T(len(s[y])); x++ {
-			v := rune(s[y][x])
-			if v != emptyVal {
-				b.contents.Set(Point[T]{x, y}, v)
+		for x = 0; x < KT(len(s[y])); x++ {
+			v := b.convFunc(s[y][x])
+			if !b.compFunc(v, b.emptyVal) {
+				b.contents.Set(Point[KT]{x, y}, v)
 			}
 		}
 	}
-	b.bounds = &Rectangle[T]{
-		P1: Point[T]{0, 0},
-		P2: Point[T]{T(len(s[0]) - 1), T(len(s) - 1)},
+	b.bounds = &Rectangle[KT]{
+		P1: Point[KT]{0, 0},
+		P2: Point[KT]{KT(len(s[0]) - 1), KT(len(s) - 1)},
 	}
 	return nil
 }
 
-func (b *Board[T]) MustFromStrings(s []string, emptyVal rune) {
-	err := b.FromStrings(s, emptyVal)
+func (b *Board[KT, VT]) MustFromStrings(s []string) {
+	err := b.FromStrings(s)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func (b *Board[T]) FromFile(name string, emptyVal rune) error {
+func (b *Board[KT, VT]) FromFile(name string) error {
+	if b.convFunc == nil {
+		return fmt.Errorf("board conversion function not initialized")
+	}
 	var y, sizeX int
-	b.emptyVal = emptyVal
 	err := OpenAndReadLines(name, func(line string) error {
 		if sizeX == 0 {
 			sizeX = len(line)
@@ -84,9 +114,9 @@ func (b *Board[T]) FromFile(name string, emptyVal rune) error {
 			}
 		}
 		for x := range line {
-			p := rune(line[x])
-			if p != emptyVal {
-				b.contents.Set(Point[T]{T(x), T(y)}, p)
+			p := b.convFunc(line[x])
+			if !b.compFunc(p, b.emptyVal) {
+				b.contents.Set(Point[KT]{KT(x), KT(y)}, p)
 			}
 		}
 		y++
@@ -95,29 +125,29 @@ func (b *Board[T]) FromFile(name string, emptyVal rune) error {
 	if err != nil {
 		return err
 	}
-	b.bounds = &Rectangle[T]{
-		P1: Point[T]{0, 0},
-		P2: Point[T]{T(sizeX - 1), T(y - 1)},
+	b.bounds = &Rectangle[KT]{
+		P1: Point[KT]{0, 0},
+		P2: Point[KT]{KT(sizeX - 1), KT(y - 1)},
 	}
 	return nil
 }
 
-func (b *Board[T]) MustFromFile(name string, emptyVal rune) {
-	err := b.FromFile(name, emptyVal)
+func (b *Board[KT, VT]) MustFromFile(name string) {
+	err := b.FromFile(name)
 	if err != nil {
 		panic(err)
 	}
 }
 
-func (b *Board[T]) Bounds() Rectangle[T] {
+func (b *Board[KT, VT]) Bounds() Rectangle[KT] {
 	if b.bounds == nil {
-		return Rectangle[T]{}
+		return Rectangle[KT]{}
 	} else {
 		return *b.bounds
 	}
 }
 
-func (b *Board[T]) orderBounds() {
+func (b *Board[KT, VT]) orderBounds() {
 	if b.bounds == nil {
 		return
 	}
@@ -129,14 +159,14 @@ func (b *Board[T]) orderBounds() {
 	}
 }
 
-func (b *Board[T]) ExpandBounds(p Point[T]) {
+func (b *Board[KT, VT]) ExpandBounds(p Point[KT]) {
 	if b.bounds == nil {
-		b.bounds = &Rectangle[T]{
-			P1: Point[T]{
+		b.bounds = &Rectangle[KT]{
+			P1: Point[KT]{
 				X: p.X,
 				Y: p.Y,
 			},
-			P2: Point[T]{
+			P2: Point[KT]{
 				X: p.X,
 				Y: p.Y,
 			},
@@ -158,55 +188,55 @@ func (b *Board[T]) ExpandBounds(p Point[T]) {
 	}
 }
 
-func (b *Board[T]) Contains(p Point[T]) bool {
+func (b *Board[KT, VT]) Contains(p Point[KT]) bool {
 	if b.bounds == nil {
 		return true
 	}
 	return p.Within(*b.bounds)
 }
 
-func (b *Board[T]) Get(p Point[T]) rune {
+func (b *Board[KT, VT]) Get(p Point[KT]) VT {
 	return b.contents.GetOrDefault(p, b.emptyVal)
 }
 
-func (b *Board[T]) Set(p Point[T], v rune) {
+func (b *Board[KT, VT]) Set(p Point[KT], v VT) {
 	b.contents.Set(p, v)
 }
 
-func (b *Board[T]) Clear(p Point[T]) {
+func (b *Board[KT, VT]) Clear(p Point[KT]) {
 	b.contents.Delete(p)
 }
 
-func (b *Board[T]) SetAndExpandBounds(p Point[T], v rune) {
+func (b *Board[KT, VT]) SetAndExpandBounds(p Point[KT], v VT) {
 	b.contents.Set(p, v)
 	b.ExpandBounds(p)
 }
 
-func (b *Board[T]) IterateBounds(pFunc func(Point[T]) bool) {
+func (b *Board[KT, VT]) IterateBounds(pFunc func(Point[KT]) bool) {
 	if b.bounds == nil {
 		return
 	}
 	b.orderBounds()
 	for y := b.bounds.P1.Y; y <= b.bounds.P2.Y; y++ {
 		for x := b.bounds.P1.X; x <= b.bounds.P2.X; x++ {
-			if !pFunc(Point[T]{x, y}) {
+			if !pFunc(Point[KT]{x, y}) {
 				return
 			}
 		}
 	}
 }
 
-func (b *Board[T]) Copy() Board[T] {
-	var nb Board[T]
+func (b *Board[KT, VT]) Copy() Board[KT, VT] {
+	var nb Board[KT, VT]
 	nb.contents = b.contents.Copy()
 	nb.emptyVal = b.emptyVal
 	if b.bounds != nil {
-		nb.bounds = &Rectangle[T]{
-			P1: Point[T]{
+		nb.bounds = &Rectangle[KT]{
+			P1: Point[KT]{
 				X: b.bounds.P1.X,
 				Y: b.bounds.P1.Y,
 			},
-			P2: Point[T]{
+			P2: Point[KT]{
 				X: b.bounds.P2.X,
 				Y: b.bounds.P2.Y,
 			},
