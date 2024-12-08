@@ -13,10 +13,6 @@ type Board[KT constraints.Integer, VT any] struct {
 	compFunc func(VT, VT) bool
 }
 
-type StandardBoard struct {
-	Board[int, rune]
-}
-
 func NewBoard[KT constraints.Integer, VT any](emptyVal VT, convFunc func(uint8) VT, compFunc func(VT, VT) bool) *Board[KT, VT] {
 	b := Board[KT, VT]{}
 	b.emptyVal = emptyVal
@@ -25,19 +21,55 @@ func NewBoard[KT constraints.Integer, VT any](emptyVal VT, convFunc func(uint8) 
 	return &b
 }
 
-func NewRuneBoard[KT constraints.Integer](emptyVal rune) *Board[KT, rune] {
-	return NewBoard[KT, rune](emptyVal,
-		func(v uint8) rune {
-			return rune(v)
-		},
-		func(v1 rune, v2 rune) bool {
-			return v1 == v2
-		})
+type RuneBoard[KT constraints.Integer] struct {
+	Board[KT, rune]
+}
+
+func NewRuneBoard[KT constraints.Integer](emptyVal rune) *RuneBoard[KT] {
+	return &RuneBoard[KT]{
+		Board: *NewBoard[KT, rune](emptyVal,
+			func(v uint8) rune {
+				return rune(v)
+			},
+			func(v1 rune, v2 rune) bool {
+				return v1 == v2
+			},
+		),
+	}
+}
+
+type StandardBoard struct {
+	RuneBoard[int]
 }
 
 func NewStandardBoard() *StandardBoard {
 	return &StandardBoard{
-		Board: *NewRuneBoard[int]('.'),
+		RuneBoard: *NewRuneBoard[int]('.'),
+	}
+}
+
+type RuneWithExtraData[ET any] struct {
+	Value rune
+	Extra ET
+}
+
+type RunePlusBoard[KT constraints.Integer, ET any] struct {
+	Board[KT, RuneWithExtraData[ET]]
+}
+
+func NewRunePlusBoard[KT constraints.Integer, ET any](emptyVal rune) *RunePlusBoard[KT, ET] {
+	var zve ET
+	return &RunePlusBoard[KT, ET]{
+		Board: *NewBoard[KT, RuneWithExtraData[ET]](RuneWithExtraData[ET]{emptyVal, zve},
+			func(u uint8) RuneWithExtraData[ET] {
+				return RuneWithExtraData[ET]{
+					Value: rune(u),
+					Extra: zve,
+				}
+			},
+			func(v1 RuneWithExtraData[ET], v2 RuneWithExtraData[ET]) bool {
+				return v1.Value == v2.Value
+			}),
 	}
 }
 
@@ -199,8 +231,16 @@ func (b *Board[KT, VT]) Get(p Point[KT]) VT {
 	return b.contents.GetOrDefault(p, b.emptyVal)
 }
 
+func (b *RunePlusBoard[KT, ET]) GetRune(p Point[KT]) rune {
+	return b.contents.GetOrDefault(p, b.emptyVal).Value
+}
+
 func (b *Board[KT, VT]) Set(p Point[KT], v VT) {
 	b.contents.Set(p, v)
+}
+
+func (b *RunePlusBoard[KT, ET]) SetRune(p Point[KT], v rune) {
+	b.contents.Set(p, RuneWithExtraData[ET]{Value: v})
 }
 
 func (b *Board[KT, VT]) Clear(p Point[KT]) {
