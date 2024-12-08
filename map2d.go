@@ -95,7 +95,7 @@ func (m2 *Map2D[KT, VT]) Iterate(iterFunc func(p Point[KT], v VT) bool) {
 	}
 }
 
-// IterateOrdered calls a function for eacn non-empty point present in the map, in a deterministic order
+// IterateOrdered calls a function for each non-empty point present in the map, in a deterministic order
 func (m2 *Map2D[KT, VT]) IterateOrdered(iterFunc func(p Point[KT], v VT) bool) {
 	type tuple = struct {
 		k Point[KT]
