@@ -348,6 +348,11 @@ func (b *Board[KT, VT]) Copy() Board[KT, VT] {
 	return nb
 }
 
+// Serial returns a unique serial number for this point, equal to y*width+x
+func (b *Board[KT, VT]) Serial(p Point[KT]) KT {
+	return p.Y*b.Bounds().Width() + p.X
+}
+
 // Format returns a string representation of the board, suitable for printing.  The user must supply a conversion function.
 func (b *Board[KT, VT]) Format(fFunc func(VT) rune) []string {
 	var results []string
