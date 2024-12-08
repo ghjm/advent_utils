@@ -3,12 +3,23 @@ package utils
 import (
 	"fmt"
 	"golang.org/x/exp/constraints"
+	"slices"
 	"strings"
 )
 
+type BoardStorage[KT constraints.Integer, VT any] interface {
+	Allocate(width, height KT, emptyVal VT)
+	Set(p Point[KT], v VT)
+	Get(p Point[KT]) (VT, bool)
+	Delete(p Point[KT])
+	GetOrDefault(p Point[KT], def VT) VT
+	Iterate(iterFunc func(p Point[KT], v VT) bool)
+	Copy() BoardStorage[KT, VT]
+}
+
 // Board is an abstraction of a 2D map of discrete map points
 type Board[KT constraints.Integer, VT any] struct {
-	contents Map2D[KT, VT]
+	contents BoardStorage[KT, VT]
 	bounds   *Rectangle[KT]
 	emptyVal VT
 	convFunc func(uint8) VT
@@ -16,8 +27,9 @@ type Board[KT constraints.Integer, VT any] struct {
 }
 
 // NewBoard allocates and initializes a new Board
-func NewBoard[KT constraints.Integer, VT any](emptyVal VT, convFunc func(uint8) VT, compFunc func(VT, VT) bool) *Board[KT, VT] {
+func NewBoard[KT constraints.Integer, VT any](storage BoardStorage[KT, VT], emptyVal VT, convFunc func(uint8) VT, compFunc func(VT, VT) bool) *Board[KT, VT] {
 	b := Board[KT, VT]{}
+	b.contents = storage
 	b.emptyVal = emptyVal
 	b.convFunc = convFunc
 	b.compFunc = compFunc
@@ -30,9 +42,9 @@ type RuneBoard[KT constraints.Integer] struct {
 }
 
 // NewRuneBoard allocates and initializes a new RuneBoard
-func NewRuneBoard[KT constraints.Integer](emptyVal rune) *RuneBoard[KT] {
+func NewRuneBoard[KT constraints.Integer](storage BoardStorage[KT, rune], emptyVal rune) *RuneBoard[KT] {
 	return &RuneBoard[KT]{
-		Board: *NewBoard[KT, rune](emptyVal,
+		Board: *NewBoard[KT, rune](storage, emptyVal,
 			func(v uint8) rune {
 				return rune(v)
 			},
@@ -48,10 +60,10 @@ type StdBoard struct {
 	RuneBoard[int]
 }
 
-// NewStandardBoard allocates and initializes a new StandardBoard
-func NewStdBoard() *StdBoard {
+// NewStdBoard allocates and initializes a new StandardBoard
+func NewStdBoard(storage BoardStorage[int, rune]) *StdBoard {
 	return &StdBoard{
-		RuneBoard: *NewRuneBoard[int]('.'),
+		RuneBoard: *NewRuneBoard[int](storage, '.'),
 	}
 }
 
@@ -67,10 +79,10 @@ type RunePlusBoard[KT constraints.Integer, ET any] struct {
 }
 
 // NewRunePlusBoard allocates and initializes a new RunePlusBoard
-func NewRunePlusBoard[KT constraints.Integer, ET any](emptyVal rune) *RunePlusBoard[KT, ET] {
+func NewRunePlusBoard[KT constraints.Integer, ET any](storage BoardStorage[KT, RunePlusData[ET]], emptyVal rune) *RunePlusBoard[KT, ET] {
 	var zve ET
 	return &RunePlusBoard[KT, ET]{
-		Board: *NewBoard[KT, RunePlusData[ET]](RunePlusData[ET]{emptyVal, zve},
+		Board: *NewBoard[KT, RunePlusData[ET]](storage, RunePlusData[ET]{emptyVal, zve},
 			func(u uint8) RunePlusData[ET] {
 				return RunePlusData[ET]{
 					Value: rune(u),
@@ -81,19 +93,6 @@ func NewRunePlusBoard[KT constraints.Integer, ET any](emptyVal rune) *RunePlusBo
 				return v1.Value == v2.Value
 			}),
 	}
-}
-
-// SetBounds sets the boundary rectangle
-func (b *Board[KT, VT]) SetBounds(x1, x2, y1, y2 KT) {
-	b.bounds = &Rectangle[KT]{
-		Point[KT]{x1, y1},
-		Point[KT]{x2, y2},
-	}
-}
-
-// ClearBounds clears the boundary rectangle
-func (b *Board[KT, VT]) ClearBounds() {
-	b.bounds = nil
 }
 
 // Transform iterates through each point of a Board, allowing each to be changed.  The changes are batched till the end.
@@ -120,6 +119,7 @@ func (b *Board[KT, VT]) FromStrings(s []string) error {
 	if b.convFunc == nil {
 		return fmt.Errorf("board conversion function not initialized")
 	}
+	b.contents.Allocate(KT(len(s[0])), KT(len(s)), b.emptyVal)
 	var x, y KT
 	for y = 0; y < KT(len(s)); y++ {
 		if len(s[y]) != len(s[0]) {
@@ -152,22 +152,9 @@ func (b *Board[KT, VT]) FromFile(name string) error {
 	if b.convFunc == nil {
 		return fmt.Errorf("board conversion function not initialized")
 	}
-	var y, sizeX int
+	var lines []string
 	err := OpenAndReadLines(name, func(line string) error {
-		if sizeX == 0 {
-			sizeX = len(line)
-		} else {
-			if sizeX != len(line) {
-				return fmt.Errorf("line lengths not uniform")
-			}
-		}
-		for x := range line {
-			p := b.convFunc(line[x])
-			if !b.compFunc(p, b.emptyVal) {
-				b.contents.Set(Point[KT]{KT(x), KT(y)}, p)
-			}
-		}
-		y++
+		lines = append(lines, line)
 		return nil
 	})
 	if err != nil {
@@ -175,7 +162,20 @@ func (b *Board[KT, VT]) FromFile(name string) error {
 	}
 	b.bounds = &Rectangle[KT]{
 		P1: Point[KT]{0, 0},
-		P2: Point[KT]{KT(sizeX - 1), KT(y - 1)},
+		P2: Point[KT]{KT(len(lines[0])), KT(len(lines))},
+	}
+	b.contents.Allocate(KT(len(lines[0])), KT(len(lines)), b.emptyVal)
+	for y, line := range lines {
+		if len(line) != len(lines[0]) {
+			return fmt.Errorf("line lengths not uniform")
+		}
+		for x := range line {
+			p := b.convFunc(line[x])
+			if !b.compFunc(p, b.emptyVal) {
+				b.contents.Set(Point[KT]{KT(x), KT(y)}, p)
+			}
+			b.contents.Set(Point[KT]{KT(x), KT(y)}, b.convFunc(line[x]))
+		}
 	}
 	return nil
 }
@@ -395,4 +395,59 @@ func (b *RunePlusBoard[KT, ET]) Format() []string {
 	return b.Board.Format(func(r RunePlusData[ET]) rune {
 		return r.Value
 	})
+}
+
+type FlatBoard struct {
+	board    [][]rune
+	emptyVal rune
+}
+
+func (fb *FlatBoard) Allocate(width, height int, emptyVal rune) {
+	fb.board = slices.Repeat([][]rune{slices.Repeat([]rune{emptyVal}, width)}, height)
+	fb.emptyVal = emptyVal
+}
+
+func (fb *FlatBoard) Set(p StdPoint, v rune) {
+	fb.board[p.Y][p.X] = v
+}
+
+func (fb *FlatBoard) Get(p StdPoint) (rune, bool) {
+	if p.X >= 0 && p.X < len(fb.board[0]) && p.Y >= 0 && p.Y < len(fb.board) {
+		return fb.board[p.Y][p.X], true
+	}
+	return 0, false
+}
+
+func (fb *FlatBoard) Delete(p StdPoint) {
+	fb.Set(p, fb.emptyVal)
+}
+
+func (fb *FlatBoard) GetOrDefault(p StdPoint, def rune) rune {
+	if p.X >= 0 && p.X < len(fb.board[0]) && p.Y >= 0 && p.Y < len(fb.board) {
+		return fb.board[p.Y][p.X]
+	}
+	return def
+}
+
+func (fb *FlatBoard) Iterate(iterFunc func(p StdPoint, v rune) bool) {
+	for y := 0; y < len(fb.board); y++ {
+		for x := 0; x < len(fb.board[0]); x++ {
+			if !iterFunc(StdPoint{x, y}, fb.board[y][x]) {
+				return
+			}
+		}
+	}
+}
+
+func (fb *FlatBoard) Copy() BoardStorage[int, rune] {
+	nb := new(FlatBoard)
+	nb.emptyVal = fb.emptyVal
+	for y := 0; y < len(fb.board); y++ {
+		var line []rune
+		for x := 0; x < len(fb.board[0]); x++ {
+			line = append(line, fb.board[y][x])
+		}
+		nb.board = append(nb.board, line)
+	}
+	return nb
 }

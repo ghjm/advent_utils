@@ -15,7 +15,7 @@ type Map2D[KT constraints.Integer, VT any] struct {
 	boundsHigh Point[KT]
 }
 
-// Hashable, if implemented by a data object, is expected to return a string uniquely identifying this object
+// Hashable is expected to return a string uniquely identifying this object
 type Hashable interface {
 	HashString() string
 }
@@ -136,4 +136,9 @@ func (m2 *Map2DHashable[KT, VT]) Hash() uint64 {
 		return true
 	})
 	return binary.BigEndian.Uint64(s.Sum(nil))
+}
+
+// Allocate is needed to satisfy BoardStorage
+func (m2 *Map2DHashable[KT, VT]) Allocate(width, height KT, emptyVal VT) {
+	m2.data = make(map[Point[KT]]VT)
 }
