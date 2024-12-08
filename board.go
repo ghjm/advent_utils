@@ -174,7 +174,6 @@ func (b *Board[KT, VT]) FromFile(name string) error {
 			if !b.compFunc(p, b.emptyVal) {
 				b.contents.Set(Point[KT]{KT(x), KT(y)}, p)
 			}
-			b.contents.Set(Point[KT]{KT(x), KT(y)}, b.convFunc(line[x]))
 		}
 	}
 	return nil
