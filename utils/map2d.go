@@ -1,12 +1,26 @@
 package utils
 
-import "golang.org/x/exp/constraints"
+import (
+	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
+	"golang.org/x/exp/constraints"
+	"sort"
+)
 
 type Map2D[KT constraints.Integer, VT any] struct {
 	data       map[Point[KT]]VT
 	boundsSet  bool
 	boundsLow  Point[KT]
 	boundsHigh Point[KT]
+}
+
+type Hashable interface {
+	HashString() string
+}
+
+type Map2DHashable[KT constraints.Integer, VT Hashable] struct {
+	Map2D[KT, VT]
 }
 
 func (m2 *Map2D[KT, VT]) Set(p Point[KT], v VT) {
@@ -71,6 +85,25 @@ func (m2 *Map2D[KT, VT]) Iterate(iterFunc func(p Point[KT], v VT) bool) {
 	}
 }
 
+func (m2 *Map2D[KT, VT]) IterateOrdered(iterFunc func(p Point[KT], v VT) bool) {
+	type tuple = struct {
+		k Point[KT]
+		v VT
+	}
+	var data []tuple
+	for k, v := range m2.data {
+		data = append(data, tuple{k, v})
+	}
+	sort.Slice(data, func(i, j int) bool {
+		return data[i].k.Y < data[j].k.Y || (data[i].k.Y == data[j].k.Y && data[i].k.X < data[j].k.X)
+	})
+	for _, t := range data {
+		if !iterFunc(t.k, t.v) {
+			return
+		}
+	}
+}
+
 func (m2 *Map2D[KT, VT]) Copy() Map2D[KT, VT] {
 	c := Map2D[KT, VT]{}
 	m2.Iterate(func(p Point[KT], v VT) bool {
@@ -78,4 +111,16 @@ func (m2 *Map2D[KT, VT]) Copy() Map2D[KT, VT] {
 		return true
 	})
 	return c
+}
+
+func (m2 *Map2DHashable[KT, VT]) Hash() uint64 {
+	s := sha256.New()
+	m2.IterateOrdered(func(p Point[KT], v VT) bool {
+		s.Write([]byte(fmt.Sprintf("(%d,%d)", p.X, p.Y)))
+		s.Write([]byte{0})
+		s.Write([]byte(v.HashString()))
+		s.Write([]byte{0})
+		return true
+	})
+	return binary.BigEndian.Uint64(s.Sum(nil))
 }

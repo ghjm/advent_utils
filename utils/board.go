@@ -26,12 +26,11 @@ func (b *Board[T]) ClearBounds() {
 	b.bounds = nil
 }
 
-type change[T constraints.Integer] struct {
-	p Point[T]
-	v rune
-}
-
 func (b *Board[T]) Transform(tFunc func(p Point[T], v rune) rune) {
+	type change[T constraints.Integer] struct {
+		p Point[T]
+		v rune
+	}
 	var changes []change[T]
 	b.contents.Iterate(func(p Point[T], v rune) bool {
 		ch := tFunc(p, v)
