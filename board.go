@@ -329,7 +329,7 @@ func (b *Board[KT, VT]) IterateBounds(pFunc func(Point[KT]) bool) {
 }
 
 // Copy returns a new copy of the board
-func (b *Board[KT, VT]) Copy() Board[KT, VT] {
+func (b *Board[KT, VT]) Copy() *Board[KT, VT] {
 	var nb Board[KT, VT]
 	nb.contents = b.contents.Copy()
 	nb.emptyVal = b.emptyVal
@@ -345,7 +345,21 @@ func (b *Board[KT, VT]) Copy() Board[KT, VT] {
 			},
 		}
 	}
-	return nb
+	return &nb
+}
+
+// Copy returns a new copy of the board
+func (b *RuneBoard[KT]) Copy() *RuneBoard[KT] {
+	var nb RuneBoard[KT]
+	nb.Board = *b.Board.Copy()
+	return &nb
+}
+
+// Copy returns a new copy of the board
+func (b *StdBoard) Copy() *StdBoard {
+	var nb StdBoard
+	nb.Board = *b.Board.Copy()
+	return &nb
 }
 
 // Serial returns a unique serial number for this point, equal to y*width+x
