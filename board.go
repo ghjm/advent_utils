@@ -43,14 +43,14 @@ func NewRuneBoard[KT constraints.Integer](emptyVal rune) *RuneBoard[KT] {
 	}
 }
 
-// StandardBoard is a RuneBoard whose addresses are Point[int]s and whose empty value is .
-type StandardBoard struct {
+// StdBoard is a RuneBoard whose addresses are of type Point[int] (aka StdPoint) and whose empty value is '.'
+type StdBoard struct {
 	RuneBoard[int]
 }
 
 // NewStandardBoard allocates and initializes a new StandardBoard
-func NewStandardBoard() *StandardBoard {
-	return &StandardBoard{
+func NewStdBoard() *StdBoard {
+	return &StdBoard{
 		RuneBoard: *NewRuneBoard[int]('.'),
 	}
 }
