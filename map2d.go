@@ -125,6 +125,11 @@ func (m2 *Map2D[KT, VT]) Copy() Map2D[KT, VT] {
 	return c
 }
 
+// Allocate is needed to satisfy BoardStorage
+func (m2 *Map2D[KT, VT]) Allocate(width, height KT, emptyVal VT) {
+	m2.data = make(map[Point[KT]]VT)
+}
+
 // Hash returns a 64-bit hash of the data in a hashable map
 func (m2 *Map2DHashable[KT, VT]) Hash() uint64 {
 	s := sha256.New()
@@ -136,9 +141,4 @@ func (m2 *Map2DHashable[KT, VT]) Hash() uint64 {
 		return true
 	})
 	return binary.BigEndian.Uint64(s.Sum(nil))
-}
-
-// Allocate is needed to satisfy BoardStorage
-func (m2 *Map2DHashable[KT, VT]) Allocate(width, height KT, emptyVal VT) {
-	m2.data = make(map[Point[KT]]VT)
 }
