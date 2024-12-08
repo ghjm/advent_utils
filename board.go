@@ -14,7 +14,7 @@ type BoardStorage[KT constraints.Integer, VT any] interface {
 	Delete(p Point[KT])
 	GetOrDefault(p Point[KT], def VT) VT
 	Iterate(iterFunc func(p Point[KT], v VT) bool)
-	Copy() BoardStorage[KT, VT]
+	CopyToBoardStorage() BoardStorage[KT, VT]
 }
 
 // Board is an abstraction of a 2D map of discrete map points
@@ -331,7 +331,7 @@ func (b *Board[KT, VT]) IterateBounds(pFunc func(Point[KT]) bool) {
 // Copy returns a new copy of the board
 func (b *Board[KT, VT]) Copy() *Board[KT, VT] {
 	var nb Board[KT, VT]
-	nb.contents = b.contents.Copy()
+	nb.contents = b.contents.CopyToBoardStorage()
 	nb.emptyVal = b.emptyVal
 	if b.bounds != nil {
 		nb.bounds = &Rectangle[KT]{
@@ -439,7 +439,7 @@ func (fb *FlatBoard) Iterate(iterFunc func(p StdPoint, v rune) bool) {
 	}
 }
 
-func (fb *FlatBoard) Copy() BoardStorage[int, rune] {
+func (fb *FlatBoard) CopyToBoardStorage() BoardStorage[int, rune] {
 	nb := new(FlatBoard)
 	nb.emptyVal = fb.emptyVal
 	for y := 0; y < len(fb.board); y++ {

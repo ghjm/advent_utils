@@ -125,6 +125,12 @@ func (m2 *Map2D[KT, VT]) Copy() Map2D[KT, VT] {
 	return c
 }
 
+// CopyToBoardStorage returns a copy as a BoardStorage type
+func (m2 *Map2D[KT, VT]) CopyToBoardStorage() BoardStorage[KT, VT] {
+	nm := m2.Copy()
+	return &nm
+}
+
 // Allocate is needed to satisfy BoardStorage
 func (m2 *Map2D[KT, VT]) Allocate(width, height KT, emptyVal VT) {
 	m2.data = make(map[Point[KT]]VT)
