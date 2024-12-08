@@ -26,6 +26,14 @@ func MustAtoi64(s string) int64 {
 	return v
 }
 
+func MustAtoiU64(s string) uint64 {
+	v, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
 func MustAtoiHex64(s string) int64 {
 	v, err := strconv.ParseInt(s, 16, 64)
 	if err != nil {
