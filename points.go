@@ -8,6 +8,15 @@ import (
 // Point is an X, Y coordinate of a given integer type
 type Point[T constraints.Integer] struct{ X, Y T }
 
+// StdPoint is a "standard" (i.e. regular int) point
+type StdPoint = Point[int]
+
+// PointPlusData is an X, Y coordinate, and some associated data
+type PointPlusData[T constraints.Integer, ET any] struct {
+	Point Point[T]
+	Data  ET
+}
+
 // Rectangle is an area defined by two X, Y coordinates at the top left and bottom right corners
 type Rectangle[T constraints.Integer] struct {
 	P1 Point[T]
@@ -52,4 +61,22 @@ func (p Point[T]) Within(r Rectangle[T]) bool {
 		}
 	}
 	return true
+}
+
+// Width returns the width of the rectangle
+func (r Rectangle[T]) Width() T {
+	a, b := r.P1.X, r.P2.X
+	if a > b {
+		a, b = b, a
+	}
+	return b - a + 1
+}
+
+// Height returns the width of the rectangle
+func (r Rectangle[T]) Height() T {
+	a, b := r.P1.Y, r.P2.Y
+	if a > b {
+		a, b = b, a
+	}
+	return b - a + 1
 }
