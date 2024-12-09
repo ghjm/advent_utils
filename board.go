@@ -3,7 +3,6 @@ package utils
 import (
 	"fmt"
 	"golang.org/x/exp/constraints"
-	"slices"
 	"strings"
 )
 
@@ -162,7 +161,7 @@ func (b *Board[KT, VT]) FromFile(name string) error {
 	}
 	b.bounds = &Rectangle[KT]{
 		P1: Point[KT]{0, 0},
-		P2: Point[KT]{KT(len(lines[0])), KT(len(lines))},
+		P2: Point[KT]{KT(len(lines[0]) - 1), KT(len(lines) - 1)},
 	}
 	b.contents.Allocate(KT(len(lines[0])), KT(len(lines)), b.emptyVal)
 	for y, line := range lines {
@@ -402,7 +401,14 @@ type FlatBoard struct {
 }
 
 func (fb *FlatBoard) Allocate(width, height int, emptyVal rune) {
-	fb.board = slices.Repeat([][]rune{slices.Repeat([]rune{emptyVal}, width)}, height)
+	fb.board = make([][]rune, 0, height)
+	for y := 0; y < height; y++ {
+		line := make([]rune, 0, width)
+		for x := 0; x < width; x++ {
+			line = append(line, emptyVal)
+		}
+		fb.board = append(fb.board, line)
+	}
 	fb.emptyVal = emptyVal
 }
 
