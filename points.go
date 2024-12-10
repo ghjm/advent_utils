@@ -28,7 +28,7 @@ type StdRectangle = Rectangle[int]
 
 // String returns a string value of the point
 func (p Point[T]) String() string {
-	return fmt.Sprintf("(X=%d, Y=%d)", p.X, p.Y)
+	return fmt.Sprintf("(X=%v, Y=%v)", p.X, p.Y)
 }
 
 // Add adds the X and Y values of another point to this point

@@ -22,7 +22,7 @@ type StdCuboid = Cuboid[int]
 
 // String returns a string value of the point
 func (p Point3D[T]) String() string {
-	return fmt.Sprintf("(X=%d, Y=%d, Z=%d)", p.X, p.Y, p.Z)
+	return fmt.Sprintf("(X=%v, Y=%v, Z=%v)", p.X, p.Y, p.Z)
 }
 
 // Add adds the coordinates of another point to this point
