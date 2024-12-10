@@ -5,14 +5,14 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-// Point3D is an X, Y, Z coordinate of a given integer type
-type Point3D[T constraints.Integer] struct{ X, Y, Z T }
+// Point3D is an X, Y, Z coordinate of a given numeric type
+type Point3D[T constraints.Integer | constraints.Float] struct{ X, Y, Z T }
 
 // StdPoint3D is a "standard" (i.e. regular int) Point3d
 type StdPoint3D = Point3D[int]
 
 // Cuboid is a volume defined by two X, Y, Z coordinates
-type Cuboid[T constraints.Integer] struct {
+type Cuboid[T constraints.Integer | constraints.Float] struct {
 	P1 Point3D[T]
 	P2 Point3D[T]
 }

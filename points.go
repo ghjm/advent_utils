@@ -5,20 +5,20 @@ import (
 	"golang.org/x/exp/constraints"
 )
 
-// Point is an X, Y coordinate of a given integer type
-type Point[T constraints.Integer] struct{ X, Y T }
+// Point is an X, Y coordinate of a given numeric type
+type Point[T constraints.Integer | constraints.Float] struct{ X, Y T }
 
 // StdPoint is a "standard" (i.e. regular int) point
 type StdPoint = Point[int]
 
 // PointPlusData is an X, Y coordinate, and some associated data
-type PointPlusData[T constraints.Integer, ET any] struct {
+type PointPlusData[T constraints.Integer | constraints.Float, ET any] struct {
 	Point Point[T]
 	Data  ET
 }
 
 // Rectangle is an area defined by two X, Y coordinates at the top left and bottom right corners
-type Rectangle[T constraints.Integer] struct {
+type Rectangle[T constraints.Integer | constraints.Float] struct {
 	P1 Point[T]
 	P2 Point[T]
 }
