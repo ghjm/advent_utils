@@ -41,3 +41,11 @@ func MustAtoiHex64(s string) int64 {
 	}
 	return v
 }
+
+func MustAtof(s string) float64 {
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
