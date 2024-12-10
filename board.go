@@ -381,6 +381,21 @@ func (b *Board[KT, VT]) Format(fFunc func(VT) rune) []string {
 	return results
 }
 
+// Cardinals returns the four cardinal points adjacent to a given point.  Points outside the boundary are rejected.
+func (b *Board[KT, VT]) Cardinals(p Point[KT]) []Point[KT] {
+	var results []Point[KT]
+	for _, d := range []StdPoint{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
+		np := Point[KT]{
+			X: p.X + KT(d.X),
+			Y: p.Y + KT(d.Y),
+		}
+		if b.Contains(np) {
+			results = append(results, np)
+		}
+	}
+	return results
+}
+
 // Format returns a string representation of the board, suitable for printing.
 func (b *RuneBoard[KT]) Format() []string {
 	return b.Board.Format(func(r rune) rune {
