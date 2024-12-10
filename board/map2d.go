@@ -1,18 +1,19 @@
-package utils
+package board
 
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"github.com/ghjm/advent_utils"
 	"golang.org/x/exp/constraints"
 	"sort"
 )
 
 // Map2D is a sparse map storing data elements in a discrete 2D space
 type Map2D[KT constraints.Integer, VT any] struct {
-	data       map[Point[KT]]VT
+	data       map[utils.Point[KT]]VT
 	boundsSet  bool
-	boundsLow  Point[KT]
-	boundsHigh Point[KT]
+	boundsLow  utils.Point[KT]
+	boundsHigh utils.Point[KT]
 }
 
 // Hashable is expected to return a string uniquely identifying this object
@@ -26,15 +27,15 @@ type Map2DHashable[KT constraints.Integer, VT Hashable] struct {
 }
 
 // Set sets the value at a location
-func (m2 *Map2D[KT, VT]) Set(p Point[KT], v VT) {
+func (m2 *Map2D[KT, VT]) Set(p utils.Point[KT], v VT) {
 	if m2.data == nil {
-		m2.data = make(map[Point[KT]]VT)
+		m2.data = make(map[utils.Point[KT]]VT)
 	}
 	m2.data[p] = v
 }
 
 // Get gets the value at a location
-func (m2 *Map2D[KT, VT]) Get(p Point[KT]) (VT, bool) {
+func (m2 *Map2D[KT, VT]) Get(p utils.Point[KT]) (VT, bool) {
 	if m2.data == nil {
 		var zv VT
 		return zv, false
@@ -48,7 +49,7 @@ func (m2 *Map2D[KT, VT]) Get(p Point[KT]) (VT, bool) {
 }
 
 // Delete removes the element at a location
-func (m2 *Map2D[KT, VT]) Delete(p Point[KT]) {
+func (m2 *Map2D[KT, VT]) Delete(p utils.Point[KT]) {
 	if m2.data == nil {
 		return
 	}
@@ -56,13 +57,13 @@ func (m2 *Map2D[KT, VT]) Delete(p Point[KT]) {
 }
 
 // Contains returns true if a non-empty value is present at the given location
-func (m2 *Map2D[KT, VT]) Contains(p Point[KT]) bool {
+func (m2 *Map2D[KT, VT]) Contains(p utils.Point[KT]) bool {
 	_, ok := m2.Get(p)
 	return ok
 }
 
 // GetOrDefault gets the element at a location, or a default value if no element is present
-func (m2 *Map2D[KT, VT]) GetOrDefault(p Point[KT], def VT) VT {
+func (m2 *Map2D[KT, VT]) GetOrDefault(p utils.Point[KT], def VT) VT {
 	v, ok := m2.Get(p)
 	if ok {
 		return v
@@ -72,7 +73,7 @@ func (m2 *Map2D[KT, VT]) GetOrDefault(p Point[KT], def VT) VT {
 }
 
 // MustGet gets the element at a location, and panics if no element is present
-func (m2 *Map2D[KT, VT]) MustGet(p Point[KT]) VT {
+func (m2 *Map2D[KT, VT]) MustGet(p utils.Point[KT]) VT {
 	v, ok := m2.Get(p)
 	if ok {
 		return v
@@ -87,7 +88,7 @@ func (m2 *Map2D[KT, VT]) Len() int {
 }
 
 // Iterate calls a function for each non-empty point present in the map
-func (m2 *Map2D[KT, VT]) Iterate(iterFunc func(p Point[KT], v VT) bool) {
+func (m2 *Map2D[KT, VT]) Iterate(iterFunc func(p utils.Point[KT], v VT) bool) {
 	for k, v := range m2.data {
 		if !iterFunc(k, v) {
 			return
@@ -96,9 +97,9 @@ func (m2 *Map2D[KT, VT]) Iterate(iterFunc func(p Point[KT], v VT) bool) {
 }
 
 // IterateOrdered calls a function for each non-empty point present in the map, in a deterministic order
-func (m2 *Map2D[KT, VT]) IterateOrdered(iterFunc func(p Point[KT], v VT) bool) {
+func (m2 *Map2D[KT, VT]) IterateOrdered(iterFunc func(p utils.Point[KT], v VT) bool) {
 	type tuple = struct {
-		k Point[KT]
+		k utils.Point[KT]
 		v VT
 	}
 	var data []tuple
@@ -118,7 +119,7 @@ func (m2 *Map2D[KT, VT]) IterateOrdered(iterFunc func(p Point[KT], v VT) bool) {
 // Copy returns a new copy of the map
 func (m2 *Map2D[KT, VT]) Copy() Map2D[KT, VT] {
 	c := Map2D[KT, VT]{}
-	m2.Iterate(func(p Point[KT], v VT) bool {
+	m2.Iterate(func(p utils.Point[KT], v VT) bool {
 		c.Set(p, v)
 		return true
 	})
@@ -133,13 +134,13 @@ func (m2 *Map2D[KT, VT]) CopyToBoardStorage() BoardStorage[KT, VT] {
 
 // Allocate is needed to satisfy BoardStorage
 func (m2 *Map2D[KT, VT]) Allocate(width, height KT, emptyVal VT) {
-	m2.data = make(map[Point[KT]]VT)
+	m2.data = make(map[utils.Point[KT]]VT)
 }
 
 // Hash returns a 64-bit hash of the data in a hashable map
 func (m2 *Map2DHashable[KT, VT]) Hash() uint64 {
 	s := sha256.New()
-	m2.IterateOrdered(func(p Point[KT], v VT) bool {
+	m2.IterateOrdered(func(p utils.Point[KT], v VT) bool {
 		s.Write([]byte(p.String()))
 		s.Write([]byte{0})
 		s.Write([]byte(v.HashString()))

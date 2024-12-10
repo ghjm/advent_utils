@@ -1,37 +1,74 @@
-package utils
+package board
 
 import (
 	"fmt"
+	"github.com/ghjm/advent_utils"
 	"golang.org/x/exp/constraints"
 	"strings"
 )
 
+// BoardStorage is an interface to pluggable back-end storage for a Board
 type BoardStorage[KT constraints.Integer, VT any] interface {
 	Allocate(width, height KT, emptyVal VT)
-	Set(p Point[KT], v VT)
-	Get(p Point[KT]) (VT, bool)
-	Delete(p Point[KT])
-	GetOrDefault(p Point[KT], def VT) VT
-	Iterate(iterFunc func(p Point[KT], v VT) bool)
+	Set(p utils.Point[KT], v VT)
+	Get(p utils.Point[KT]) (VT, bool)
+	Delete(p utils.Point[KT])
+	GetOrDefault(p utils.Point[KT], def VT) VT
+	Iterate(iterFunc func(p utils.Point[KT], v VT) bool)
 	CopyToBoardStorage() BoardStorage[KT, VT]
 }
 
 // Board is an abstraction of a 2D map of discrete map points
 type Board[KT constraints.Integer, VT any] struct {
-	contents BoardStorage[KT, VT]
-	bounds   *Rectangle[KT]
+	BoardOptions[KT, VT]
+	bounds *utils.Rectangle[KT]
+}
+
+// BoardOptions collects extra options when initializing a Board
+type BoardOptions[KT constraints.Integer, VT any] struct {
+	storage  BoardStorage[KT, VT]
 	emptyVal VT
 	convFunc func(uint8) VT
 	compFunc func(VT, VT) bool
 }
 
+// WithStorage provides a storage backend to a Board
+func WithStorage[KT constraints.Integer, VT any](storage BoardStorage[KT, VT]) func(*BoardOptions[KT, VT]) {
+	return func(options *BoardOptions[KT, VT]) {
+		options.storage = storage
+	}
+}
+
+// WithEmptyVal provides an empty value
+func WithEmptyVal[KT constraints.Integer, VT any](emptyVal VT) func(*BoardOptions[KT, VT]) {
+	return func(options *BoardOptions[KT, VT]) {
+		options.emptyVal = emptyVal
+	}
+}
+
+// WithConvFunc provides a conversion function, needed for loading from strings/files
+func WithConvFunc[KT constraints.Integer, VT any](convFunc func(uint8) VT) func(*BoardOptions[KT, VT]) {
+	return func(options *BoardOptions[KT, VT]) {
+		options.convFunc = convFunc
+	}
+}
+
+// WithCompareFunc provides a conversion function, needed for loading from strings/files
+func WithCompareFunc[KT constraints.Integer, VT any](compFunc func(VT, VT) bool) func(*BoardOptions[KT, VT]) {
+	return func(options *BoardOptions[KT, VT]) {
+		options.compFunc = compFunc
+	}
+}
+
 // NewBoard allocates and initializes a new Board
-func NewBoard[KT constraints.Integer, VT any](storage BoardStorage[KT, VT], emptyVal VT, convFunc func(uint8) VT, compFunc func(VT, VT) bool) *Board[KT, VT] {
+func NewBoard[KT constraints.Integer, VT any](options ...func(board *BoardOptions[KT, VT])) *Board[KT, VT] {
 	b := Board[KT, VT]{}
-	b.contents = storage
-	b.emptyVal = emptyVal
-	b.convFunc = convFunc
-	b.compFunc = compFunc
+	for _, opt := range options {
+		opt(&b.BoardOptions)
+	}
+	if b.storage == nil {
+		b.storage = &Map2D[KT, VT]{}
+	}
 	return &b
 }
 
@@ -41,28 +78,35 @@ type RuneBoard[KT constraints.Integer] struct {
 }
 
 // NewRuneBoard allocates and initializes a new RuneBoard
-func NewRuneBoard[KT constraints.Integer](storage BoardStorage[KT, rune], emptyVal rune) *RuneBoard[KT] {
-	return &RuneBoard[KT]{
-		Board: *NewBoard[KT, rune](storage, emptyVal,
-			func(v uint8) rune {
-				return rune(v)
-			},
-			func(v1 rune, v2 rune) bool {
-				return v1 == v2
-			},
-		),
+func NewRuneBoard[KT constraints.Integer](options ...func(board *BoardOptions[KT, rune])) *RuneBoard[KT] {
+	b := &RuneBoard[KT]{
+		Board: *NewBoard[KT, rune](options...),
 	}
+	if b.emptyVal == 0 {
+		b.emptyVal = '.'
+	}
+	if b.convFunc == nil {
+		b.convFunc = func(v uint8) rune {
+			return rune(v)
+		}
+	}
+	if b.compFunc == nil {
+		b.compFunc = func(v1 rune, v2 rune) bool {
+			return v1 == v2
+		}
+	}
+	return b
 }
 
-// StdBoard is a RuneBoard whose addresses are of type Point[int] (aka StdPoint) and whose empty value is '.'
+// StdBoard is a convenience name for RuneBoard[int]
 type StdBoard struct {
 	RuneBoard[int]
 }
 
 // NewStdBoard allocates and initializes a new StandardBoard
-func NewStdBoard(storage BoardStorage[int, rune]) *StdBoard {
+func NewStdBoard(options ...func(board *BoardOptions[int, rune])) *StdBoard {
 	return &StdBoard{
-		RuneBoard: *NewRuneBoard[int](storage, '.'),
+		RuneBoard: *NewRuneBoard[int](options...),
 	}
 }
 
@@ -77,31 +121,39 @@ type RunePlusBoard[KT constraints.Integer, ET any] struct {
 	Board[KT, RunePlusData[ET]]
 }
 
-// NewRunePlusBoard allocates and initializes a new RunePlusBoard
-func NewRunePlusBoard[KT constraints.Integer, ET any](storage BoardStorage[KT, RunePlusData[ET]], emptyVal rune) *RunePlusBoard[KT, ET] {
-	var zve ET
-	return &RunePlusBoard[KT, ET]{
-		Board: *NewBoard[KT, RunePlusData[ET]](storage, RunePlusData[ET]{emptyVal, zve},
-			func(u uint8) RunePlusData[ET] {
-				return RunePlusData[ET]{
-					Value: rune(u),
-					Extra: zve,
-				}
-			},
-			func(v1 RunePlusData[ET], v2 RunePlusData[ET]) bool {
-				return v1.Value == v2.Value
-			}),
+// NewRunePlusBoard allocates and initializes a new RunePlusBoard.
+func NewRunePlusBoard[KT constraints.Integer, ET any](options ...func(board *BoardOptions[KT, RunePlusData[ET]])) *RunePlusBoard[KT, ET] {
+	b := &RunePlusBoard[KT, ET]{
+		Board: *NewBoard[KT, RunePlusData[ET]](options...),
 	}
+	if b.emptyVal.Value == 0 {
+		b.emptyVal.Value = '.'
+	}
+	var zve ET
+	if b.convFunc == nil {
+		b.convFunc = func(u uint8) RunePlusData[ET] {
+			return RunePlusData[ET]{
+				Value: rune(u),
+				Extra: zve,
+			}
+		}
+	}
+	if b.compFunc == nil {
+		b.compFunc = func(v1 RunePlusData[ET], v2 RunePlusData[ET]) bool {
+			return v1.Value == v2.Value
+		}
+	}
+	return b
 }
 
 // Transform iterates through each point of a Board, allowing each to be changed.  The changes are batched till the end.
-func (b *Board[KT, VT]) Transform(tFunc func(p Point[KT], v VT) VT) {
+func (b *Board[KT, VT]) Transform(tFunc func(p utils.Point[KT], v VT) VT) {
 	type change[KT constraints.Integer] struct {
-		p Point[KT]
+		p utils.Point[KT]
 		v VT
 	}
 	var changes []change[KT]
-	b.contents.Iterate(func(p Point[KT], v VT) bool {
+	b.storage.Iterate(func(p utils.Point[KT], v VT) bool {
 		ch := tFunc(p, v)
 		if !b.compFunc(ch, v) {
 			changes = append(changes, change[KT]{p, ch})
@@ -109,7 +161,7 @@ func (b *Board[KT, VT]) Transform(tFunc func(p Point[KT], v VT) VT) {
 		return true
 	})
 	for _, c := range changes {
-		b.contents.Set(c.p, c.v)
+		b.storage.Set(c.p, c.v)
 	}
 }
 
@@ -118,7 +170,7 @@ func (b *Board[KT, VT]) FromStrings(s []string) error {
 	if b.convFunc == nil {
 		return fmt.Errorf("board conversion function not initialized")
 	}
-	b.contents.Allocate(KT(len(s[0])), KT(len(s)), b.emptyVal)
+	b.storage.Allocate(KT(len(s[0])), KT(len(s)), b.emptyVal)
 	var x, y KT
 	for y = 0; y < KT(len(s)); y++ {
 		if len(s[y]) != len(s[0]) {
@@ -127,13 +179,13 @@ func (b *Board[KT, VT]) FromStrings(s []string) error {
 		for x = 0; x < KT(len(s[y])); x++ {
 			v := b.convFunc(s[y][x])
 			if !b.compFunc(v, b.emptyVal) {
-				b.contents.Set(Point[KT]{x, y}, v)
+				b.storage.Set(utils.Point[KT]{x, y}, v)
 			}
 		}
 	}
-	b.bounds = &Rectangle[KT]{
-		P1: Point[KT]{0, 0},
-		P2: Point[KT]{KT(len(s[0]) - 1), KT(len(s) - 1)},
+	b.bounds = &utils.Rectangle[KT]{
+		P1: utils.Point[KT]{0, 0},
+		P2: utils.Point[KT]{KT(len(s[0]) - 1), KT(len(s) - 1)},
 	}
 	return nil
 }
@@ -152,18 +204,18 @@ func (b *Board[KT, VT]) FromFile(name string) error {
 		return fmt.Errorf("board conversion function not initialized")
 	}
 	var lines []string
-	err := OpenAndReadLines(name, func(line string) error {
+	err := utils.OpenAndReadLines(name, func(line string) error {
 		lines = append(lines, line)
 		return nil
 	})
 	if err != nil {
 		return err
 	}
-	b.bounds = &Rectangle[KT]{
-		P1: Point[KT]{0, 0},
-		P2: Point[KT]{KT(len(lines[0]) - 1), KT(len(lines) - 1)},
+	b.bounds = &utils.Rectangle[KT]{
+		P1: utils.Point[KT]{0, 0},
+		P2: utils.Point[KT]{KT(len(lines[0]) - 1), KT(len(lines) - 1)},
 	}
-	b.contents.Allocate(KT(len(lines[0])), KT(len(lines)), b.emptyVal)
+	b.storage.Allocate(KT(len(lines[0])), KT(len(lines)), b.emptyVal)
 	for y, line := range lines {
 		if len(line) != len(lines[0]) {
 			return fmt.Errorf("line lengths not uniform")
@@ -171,7 +223,7 @@ func (b *Board[KT, VT]) FromFile(name string) error {
 		for x := range line {
 			p := b.convFunc(line[x])
 			if !b.compFunc(p, b.emptyVal) {
-				b.contents.Set(Point[KT]{KT(x), KT(y)}, p)
+				b.storage.Set(utils.Point[KT]{KT(x), KT(y)}, p)
 			}
 		}
 	}
@@ -200,24 +252,24 @@ func (b *Board[KT, VT]) orderBounds() {
 }
 
 // Bounds returns the boundary rectangle, or the zero value rectangle if no bounds are set
-func (b *Board[KT, VT]) Bounds() Rectangle[KT] {
+func (b *Board[KT, VT]) Bounds() utils.Rectangle[KT] {
 	b.orderBounds()
 	if b.bounds == nil {
-		return Rectangle[KT]{}
+		return utils.Rectangle[KT]{}
 	} else {
 		return *b.bounds
 	}
 }
 
 // ExpandBounds expands the boundary rectangle to include an arbitrary point
-func (b *Board[KT, VT]) ExpandBounds(p Point[KT]) {
+func (b *Board[KT, VT]) ExpandBounds(p utils.Point[KT]) {
 	if b.bounds == nil {
-		b.bounds = &Rectangle[KT]{
-			P1: Point[KT]{
+		b.bounds = &utils.Rectangle[KT]{
+			P1: utils.Point[KT]{
 				X: p.X,
 				Y: p.Y,
 			},
-			P2: Point[KT]{
+			P2: utils.Point[KT]{
 				X: p.X,
 				Y: p.Y,
 			},
@@ -240,7 +292,7 @@ func (b *Board[KT, VT]) ExpandBounds(p Point[KT]) {
 }
 
 // Contains returns true if the given point is contained within the board's boundary rectangle
-func (b *Board[KT, VT]) Contains(p Point[KT]) bool {
+func (b *Board[KT, VT]) Contains(p utils.Point[KT]) bool {
 	if b.bounds == nil {
 		return true
 	}
@@ -248,78 +300,78 @@ func (b *Board[KT, VT]) Contains(p Point[KT]) bool {
 }
 
 // Get returns the value of a location on the board
-func (b *Board[KT, VT]) Get(p Point[KT]) VT {
-	return b.contents.GetOrDefault(p, b.emptyVal)
+func (b *Board[KT, VT]) Get(p utils.Point[KT]) VT {
+	return b.storage.GetOrDefault(p, b.emptyVal)
 }
 
 // GetRune returns only the rune from a location on the board
-func (b *RunePlusBoard[KT, ET]) GetRune(p Point[KT]) rune {
-	return b.contents.GetOrDefault(p, b.emptyVal).Value
+func (b *RunePlusBoard[KT, ET]) GetRune(p utils.Point[KT]) rune {
+	return b.storage.GetOrDefault(p, b.emptyVal).Value
 }
 
 // GetExtra returns only the extra value from a location on the board
-func (b *RunePlusBoard[KT, ET]) GetExtra(p Point[KT]) ET {
-	return b.contents.GetOrDefault(p, b.emptyVal).Extra
+func (b *RunePlusBoard[KT, ET]) GetExtra(p utils.Point[KT]) ET {
+	return b.storage.GetOrDefault(p, b.emptyVal).Extra
 }
 
 // Set sets the value of a location on the board
-func (b *Board[KT, VT]) Set(p Point[KT], v VT) {
-	b.contents.Set(p, v)
+func (b *Board[KT, VT]) Set(p utils.Point[KT], v VT) {
+	b.storage.Set(p, v)
 }
 
 // SetRuneOnly sets the rune and clears any extra data
-func (b *RunePlusBoard[KT, ET]) SetRuneOnly(p Point[KT], v rune) {
-	b.contents.Set(p, RunePlusData[ET]{Value: v})
+func (b *RunePlusBoard[KT, ET]) SetRuneOnly(p utils.Point[KT], v rune) {
+	b.storage.Set(p, RunePlusData[ET]{Value: v})
 }
 
 // SetRune sets the rune, preserving extra data if present
-func (b *RunePlusBoard[KT, ET]) SetRune(p Point[KT], v rune) {
-	c, ok := b.contents.Get(p)
+func (b *RunePlusBoard[KT, ET]) SetRune(p utils.Point[KT], v rune) {
+	c, ok := b.storage.Get(p)
 	var ev ET
 	if ok {
 		ev = c.Extra
 	}
-	b.contents.Set(p, RunePlusData[ET]{Value: v, Extra: ev})
+	b.storage.Set(p, RunePlusData[ET]{Value: v, Extra: ev})
 }
 
 // SetExtra sets the extra data, preserving the rune value.  If the rune had no value, the empty value is added.
-func (b *RunePlusBoard[KT, ET]) SetExtra(p Point[KT], v ET) {
-	c := b.contents.GetOrDefault(p, b.emptyVal)
-	b.contents.Set(p, RunePlusData[ET]{Value: c.Value, Extra: v})
+func (b *RunePlusBoard[KT, ET]) SetExtra(p utils.Point[KT], v ET) {
+	c := b.storage.GetOrDefault(p, b.emptyVal)
+	b.storage.Set(p, RunePlusData[ET]{Value: c.Value, Extra: v})
 }
 
 // Clear clears the value of a location on the board
-func (b *Board[KT, VT]) Clear(p Point[KT]) {
-	b.contents.Delete(p)
+func (b *Board[KT, VT]) Clear(p utils.Point[KT]) {
+	b.storage.Delete(p)
 }
 
 // SetAndExpandBounds sets a point and also ensures that this point is within the boundary rectangle
-func (b *Board[KT, VT]) SetAndExpandBounds(p Point[KT], v VT) {
-	b.contents.Set(p, v)
+func (b *Board[KT, VT]) SetAndExpandBounds(p utils.Point[KT], v VT) {
+	b.storage.Set(p, v)
 	b.ExpandBounds(p)
 }
 
 // Iterate calls a function for every populated location on the board
-func (b *Board[KT, VT]) Iterate(iterFunc func(p Point[KT], v VT) bool) {
-	b.contents.Iterate(iterFunc)
+func (b *Board[KT, VT]) Iterate(iterFunc func(p utils.Point[KT], v VT) bool) {
+	b.storage.Iterate(iterFunc)
 }
 
 // IterateRunes calls a function for every populated location on the board, returning only the rune
-func (b *RunePlusBoard[KT, VT]) IterateRunes(iterFunc func(p Point[KT], v rune) bool) {
-	b.contents.Iterate(func(p Point[KT], v RunePlusData[VT]) bool {
+func (b *RunePlusBoard[KT, VT]) IterateRunes(iterFunc func(p utils.Point[KT], v rune) bool) {
+	b.storage.Iterate(func(p utils.Point[KT], v RunePlusData[VT]) bool {
 		return iterFunc(p, v.Value)
 	})
 }
 
 // IterateBounds calls a function for every point within the boundary rectangle, whether or not it is populated
-func (b *Board[KT, VT]) IterateBounds(pFunc func(Point[KT]) bool) {
+func (b *Board[KT, VT]) IterateBounds(pFunc func(utils.Point[KT]) bool) {
 	if b.bounds == nil {
 		return
 	}
 	b.orderBounds()
 	for y := b.bounds.P1.Y; y <= b.bounds.P2.Y; y++ {
 		for x := b.bounds.P1.X; x <= b.bounds.P2.X; x++ {
-			if !pFunc(Point[KT]{x, y}) {
+			if !pFunc(utils.Point[KT]{x, y}) {
 				return
 			}
 		}
@@ -329,15 +381,15 @@ func (b *Board[KT, VT]) IterateBounds(pFunc func(Point[KT]) bool) {
 // Copy returns a new copy of the board
 func (b *Board[KT, VT]) Copy() *Board[KT, VT] {
 	var nb Board[KT, VT]
-	nb.contents = b.contents.CopyToBoardStorage()
+	nb.storage = b.storage.CopyToBoardStorage()
 	nb.emptyVal = b.emptyVal
 	if b.bounds != nil {
-		nb.bounds = &Rectangle[KT]{
-			P1: Point[KT]{
+		nb.bounds = &utils.Rectangle[KT]{
+			P1: utils.Point[KT]{
 				X: b.bounds.P1.X,
 				Y: b.bounds.P1.Y,
 			},
-			P2: Point[KT]{
+			P2: utils.Point[KT]{
 				X: b.bounds.P2.X,
 				Y: b.bounds.P2.Y,
 			},
@@ -361,7 +413,7 @@ func (b *StdBoard) Copy() *StdBoard {
 }
 
 // Serial returns a unique serial number for this point, equal to y*width+x
-func (b *Board[KT, VT]) Serial(p Point[KT]) KT {
+func (b *Board[KT, VT]) Serial(p utils.Point[KT]) KT {
 	return p.Y*b.Bounds().Width() + p.X
 }
 
@@ -369,7 +421,7 @@ func (b *Board[KT, VT]) Serial(p Point[KT]) KT {
 func (b *Board[KT, VT]) Format(fFunc func(VT) rune) []string {
 	var results []string
 	var builder strings.Builder
-	b.IterateBounds(func(p Point[KT]) bool {
+	b.IterateBounds(func(p utils.Point[KT]) bool {
 		if p.X == 0 && p.Y != 0 {
 			results = append(results, builder.String())
 			builder.Reset()
@@ -382,10 +434,25 @@ func (b *Board[KT, VT]) Format(fFunc func(VT) rune) []string {
 }
 
 // Cardinals returns the four cardinal points adjacent to a given point.  Points outside the boundary are rejected.
-func (b *Board[KT, VT]) Cardinals(p Point[KT]) []Point[KT] {
-	var results []Point[KT]
-	for _, d := range []StdPoint{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
-		np := Point[KT]{
+func (b *Board[KT, VT]) Cardinals(p utils.Point[KT]) []utils.Point[KT] {
+	var results []utils.Point[KT]
+	for _, d := range []utils.StdPoint{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
+		np := utils.Point[KT]{
+			X: p.X + KT(d.X),
+			Y: p.Y + KT(d.Y),
+		}
+		if b.Contains(np) {
+			results = append(results, np)
+		}
+	}
+	return results
+}
+
+// Diagonals returns the eight diagonal (including cardinal) points adjacent to a given point.  Points outside the boundary are rejected.
+func (b *Board[KT, VT]) Diagonals(p utils.Point[KT]) []utils.Point[KT] {
+	var results []utils.Point[KT]
+	for _, d := range []utils.StdPoint{{-1, -1}, {0, -1}, {1, -1}, {-1, 0}, {1, 0}, {-1, 1}, {0, 1}, {1, 1}} {
+		np := utils.Point[KT]{
 			X: p.X + KT(d.X),
 			Y: p.Y + KT(d.Y),
 		}
@@ -427,32 +494,32 @@ func (fb *FlatBoard) Allocate(width, height int, emptyVal rune) {
 	fb.emptyVal = emptyVal
 }
 
-func (fb *FlatBoard) Set(p StdPoint, v rune) {
+func (fb *FlatBoard) Set(p utils.StdPoint, v rune) {
 	fb.board[p.Y][p.X] = v
 }
 
-func (fb *FlatBoard) Get(p StdPoint) (rune, bool) {
+func (fb *FlatBoard) Get(p utils.StdPoint) (rune, bool) {
 	if p.X >= 0 && p.X < len(fb.board[0]) && p.Y >= 0 && p.Y < len(fb.board) {
 		return fb.board[p.Y][p.X], true
 	}
 	return 0, false
 }
 
-func (fb *FlatBoard) Delete(p StdPoint) {
+func (fb *FlatBoard) Delete(p utils.StdPoint) {
 	fb.Set(p, fb.emptyVal)
 }
 
-func (fb *FlatBoard) GetOrDefault(p StdPoint, def rune) rune {
+func (fb *FlatBoard) GetOrDefault(p utils.StdPoint, def rune) rune {
 	if p.X >= 0 && p.X < len(fb.board[0]) && p.Y >= 0 && p.Y < len(fb.board) {
 		return fb.board[p.Y][p.X]
 	}
 	return def
 }
 
-func (fb *FlatBoard) Iterate(iterFunc func(p StdPoint, v rune) bool) {
+func (fb *FlatBoard) Iterate(iterFunc func(p utils.StdPoint, v rune) bool) {
 	for y := 0; y < len(fb.board); y++ {
 		for x := 0; x < len(fb.board[0]); x++ {
-			if !iterFunc(StdPoint{x, y}, fb.board[y][x]) {
+			if !iterFunc(utils.StdPoint{x, y}, fb.board[y][x]) {
 				return
 			}
 		}
