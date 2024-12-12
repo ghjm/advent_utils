@@ -441,6 +441,13 @@ func (b *Board[KT, VT]) Format(fFunc func(VT) rune) []string {
 	return results
 }
 
+// Print prints a board to stdout.  The user must supply a conversion function.
+func (b *Board[KT, VT]) Print(fFunc func(VT) rune) {
+	for _, line := range b.Format(fFunc) {
+		fmt.Printf("%s\n", line)
+	}
+}
+
 // Cardinals returns the four cardinal points adjacent to a given point.
 func (b *Board[KT, VT]) Cardinals(p utils.Point[KT], includeOffBoard bool) []utils.Point[KT] {
 	var results []utils.Point[KT]
@@ -530,9 +537,23 @@ func (b *RuneBoard[KT]) Format() []string {
 	})
 }
 
+// Print prints a board to stdout.
+func (b *RuneBoard[KT]) Print() {
+	b.Board.Print(func(r rune) rune {
+		return r
+	})
+}
+
 // Format returns a string representation of the board, suitable for printing.  Extra data is not shown.
 func (b *RunePlusBoard[KT, ET]) Format() []string {
 	return b.Board.Format(func(r RunePlusData[ET]) rune {
+		return r.Value
+	})
+}
+
+// Print prints a board to stdout.  Extra data is not printed.
+func (b *RunePlusBoard[KT, ET]) Print() {
+	b.Board.Print(func(r RunePlusData[ET]) rune {
 		return r.Value
 	})
 }
