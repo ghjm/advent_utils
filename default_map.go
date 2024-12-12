@@ -42,3 +42,11 @@ func (m *defaultMap[K, D]) Delete(key K) {
 	}
 	delete(m.data, key)
 }
+
+// GetOrDefault provides default map functionality to existing maps that aren't a DefaultMap
+func GetOrDefault[K comparable, D any](d map[K]D, key K, defaultValue D) D {
+	if v, ok := d[key]; ok {
+		return v
+	}
+	return defaultValue
+}
