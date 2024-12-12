@@ -21,12 +21,12 @@ type BoardStorage[KT constraints.Integer, VT any] interface {
 // Board is an abstraction of a 2D map of discrete map points
 type Board[KT constraints.Integer, VT any] struct {
 	BoardOptions[KT, VT]
-	bounds *utils.Rectangle[KT]
 }
 
 // BoardOptions collects extra options when initializing a Board
 type BoardOptions[KT constraints.Integer, VT any] struct {
 	storage  BoardStorage[KT, VT]
+	bounds   *utils.Rectangle[KT]
 	emptyVal VT
 	convFunc func(uint8) VT
 	compFunc func(VT, VT) bool
@@ -36,6 +36,13 @@ type BoardOptions[KT constraints.Integer, VT any] struct {
 func WithStorage[KT constraints.Integer, VT any](storage BoardStorage[KT, VT]) func(*BoardOptions[KT, VT]) {
 	return func(options *BoardOptions[KT, VT]) {
 		options.storage = storage
+	}
+}
+
+// WithBounds provides initial bounds to a Board
+func WithBounds[KT constraints.Integer, VT any](bounds utils.Rectangle[KT]) func(*BoardOptions[KT, VT]) {
+	return func(options *BoardOptions[KT, VT]) {
+		options.bounds = &bounds
 	}
 }
 
@@ -419,48 +426,101 @@ func (b *Board[KT, VT]) Serial(p utils.Point[KT]) KT {
 
 // Format returns a string representation of the board, suitable for printing.  The user must supply a conversion function.
 func (b *Board[KT, VT]) Format(fFunc func(VT) rune) []string {
+	if b.bounds == nil {
+		return nil
+	}
+	b.orderBounds()
 	var results []string
-	var builder strings.Builder
-	b.IterateBounds(func(p utils.Point[KT]) bool {
-		if p.X == 0 && p.Y != 0 {
-			results = append(results, builder.String())
-			builder.Reset()
+	for y := b.bounds.P1.Y; y <= b.bounds.P2.Y; y++ {
+		var builder strings.Builder
+		for x := b.bounds.P1.X; x <= b.bounds.P2.X; x++ {
+			builder.WriteRune(fFunc(b.Get(utils.Point[KT]{X: x, Y: y})))
 		}
-		builder.WriteRune(fFunc(b.Get(p)))
-		return true
-	})
-	results = append(results, builder.String())
+		results = append(results, builder.String())
+	}
 	return results
 }
 
-// Cardinals returns the four cardinal points adjacent to a given point.  Points outside the boundary are rejected.
-func (b *Board[KT, VT]) Cardinals(p utils.Point[KT]) []utils.Point[KT] {
+// Cardinals returns the four cardinal points adjacent to a given point.
+func (b *Board[KT, VT]) Cardinals(p utils.Point[KT], includeOffBoard bool) []utils.Point[KT] {
 	var results []utils.Point[KT]
 	for _, d := range []utils.StdPoint{{-1, 0}, {1, 0}, {0, -1}, {0, 1}} {
 		np := utils.Point[KT]{
 			X: p.X + KT(d.X),
 			Y: p.Y + KT(d.Y),
 		}
-		if b.Contains(np) {
+		if includeOffBoard || b.Contains(np) {
 			results = append(results, np)
 		}
 	}
 	return results
 }
 
-// Diagonals returns the eight diagonal (including cardinal) points adjacent to a given point.  Points outside the boundary are rejected.
-func (b *Board[KT, VT]) Diagonals(p utils.Point[KT]) []utils.Point[KT] {
+// Diagonals returns the eight diagonal (including cardinal) points adjacent to a given point.
+func (b *Board[KT, VT]) Diagonals(p utils.Point[KT], includeOffBoard bool) []utils.Point[KT] {
 	var results []utils.Point[KT]
 	for _, d := range []utils.StdPoint{{-1, -1}, {0, -1}, {1, -1}, {-1, 0}, {1, 0}, {-1, 1}, {0, 1}, {1, 1}} {
 		np := utils.Point[KT]{
 			X: p.X + KT(d.X),
 			Y: p.Y + KT(d.Y),
 		}
-		if b.Contains(np) {
+		if includeOffBoard || b.Contains(np) {
 			results = append(results, np)
 		}
 	}
 	return results
+}
+
+// Search performs a flood fill type search of a board from a given start point and with a given neighbors function.
+func (b *Board[KT, VT]) Search(start utils.Point[KT], neighbors func(p utils.Point[KT]) []utils.Point[KT]) map[utils.Point[KT]]struct{} {
+	open := []utils.Point[KT]{start}
+	visited := make(map[utils.Point[KT]]struct{})
+	for len(open) > 0 {
+		cur := open[0]
+		open = open[1:]
+		if _, ok := visited[cur]; ok {
+			continue
+		}
+		visited[cur] = struct{}{}
+		for _, p := range neighbors(cur) {
+			if _, ok := visited[p]; !ok {
+				open = append(open, p)
+			}
+		}
+	}
+	return visited
+}
+
+// FindRegions groups a board into same-valued regions based on cardinal neighbors.
+func (b *Board[KT, VT]) FindRegions(includeEmptyVal bool) []map[utils.Point[KT]]struct{} {
+	if b.compFunc == nil {
+		panic("compFunc not defined")
+	}
+	var regions []map[utils.Point[KT]]struct{}
+	visited := make(map[utils.Point[KT]]struct{})
+	b.IterateBounds(func(p utils.Point[KT]) bool {
+		if _, ok := visited[p]; ok {
+			return true
+		}
+		if (!includeEmptyVal) && b.compFunc(b.Get(p), b.emptyVal) {
+			return true
+		}
+		reg := b.Search(p, func(pn utils.Point[KT]) []utils.Point[KT] {
+			var results []utils.Point[KT]
+			for _, cpn := range b.Cardinals(pn, false) {
+				if b.compFunc(b.Get(pn), b.Get(cpn)) {
+					results = append(results, cpn)
+				}
+			}
+			return results
+		})
+		for rp := range reg {
+			visited[rp] = struct{}{}
+		}
+		regions = append(regions, reg)
+		return true
+	})
+	return regions
 }
 
 // Format returns a string representation of the board, suitable for printing.
