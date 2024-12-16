@@ -575,6 +575,16 @@ func (fb *FlatBoard) Allocate(width, height int, emptyVal rune) {
 	fb.emptyVal = emptyVal
 }
 
+func (fb *FlatBoard) GetBounds() utils.StdRectangle {
+	return utils.StdRectangle{
+		P1: utils.Point[int]{},
+		P2: utils.Point[int]{
+			X: len(fb.board[0]) - 1,
+			Y: len(fb.board) - 1,
+		},
+	}
+}
+
 func (fb *FlatBoard) Set(p utils.StdPoint, v rune) {
 	fb.board[p.Y][p.X] = v
 }
