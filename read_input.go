@@ -90,6 +90,39 @@ func OpenAndReadRegex(name string, regex string, allMustMatch bool) ([][]string,
 	return results, nil
 }
 
+type MultiRegex struct {
+	Regex     string
+	MatchFunc func([]string) error
+	re        *regexp.Regexp
+}
+
+func OpenAndReadMultipleRegex(name string, regexes []MultiRegex, allMustMatch bool) error {
+	for i := range regexes {
+		var err error
+		regexes[i].re, err = regexp.Compile(regexes[i].Regex)
+		if err != nil {
+			return err
+		}
+	}
+	err := OpenAndReadLines(name, func(s string) error {
+		for _, rx := range regexes {
+			m := rx.re.FindStringSubmatch(s)
+			if m != nil {
+				err := rx.MatchFunc(m)
+				if err != nil {
+					return err
+				}
+				return nil
+			}
+		}
+		if allMustMatch {
+			return fmt.Errorf("line failed to match any regexes")
+		}
+		return nil
+	})
+	return err
+}
+
 func StringsToInts(s []string, positions ...int) ([]int, error) {
 	var results []int
 	for _, p := range positions {
