@@ -3,6 +3,7 @@ package utils
 import (
 	"fmt"
 	"golang.org/x/exp/constraints"
+	"math"
 )
 
 // Point is an X, Y coordinate of a given numeric type
@@ -44,6 +45,24 @@ func (p Point[T]) Delta(q Point[T]) Point[T] {
 // Negate returns a point with the negation of the X and Y values of this point
 func (p Point[T]) Negate() Point[T] {
 	return Point[T]{-p.X, -p.Y}
+}
+
+// ManhattanDistance returns the Manhattan distance between two points
+func (p Point[T]) ManhattanDistance(p2 Point[T]) T {
+	var sum T
+	for _, v := range [][2]T{{p.X, p2.X}, {p.Y, p2.Y}} {
+		if v[0] > v[1] {
+			sum += v[0] - v[1]
+		} else {
+			sum += v[1] - v[0]
+		}
+	}
+	return sum
+}
+
+// EuclideanDistance returns the Euclidean distance between two points, as a float64 regardless of the point's datatype
+func (p Point[T]) EuclideanDistance(p2 Point[T]) float64 {
+	return math.Sqrt(math.Pow(float64(p.X)-float64(p2.X), 2) + math.Pow(float64(p.Y)-float64(p2.Y), 2))
 }
 
 // Within returns true if this point is within the bounds of a given rectangle
