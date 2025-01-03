@@ -103,3 +103,13 @@ func (g *Graph[T]) Dijkstra(source T) (map[T]uint64, map[T][]T) {
 	}
 	return dist, prev
 }
+
+func (g *Graph[T]) Copy() *Graph[T] {
+	g.checkInit()
+	var ng Graph[T]
+	ng.checkInit()
+	for k, v := range g.Nodes {
+		ng.Nodes[k] = v[:]
+	}
+	return &ng
+}
