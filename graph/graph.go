@@ -38,11 +38,13 @@ func (g *Graph[T]) AddEdge(from, to T, cost uint64) {
 	g.Nodes[from] = append(g.Nodes[from], Edge[T]{Dest: to, Cost: cost})
 }
 
-// BuildStateGraph builds a graph, given a transition function between states
-func (g *Graph[T]) BuildStateGraph(initialState T, transitionFunc func(T) []Edge[T]) {
-	g.Nodes = nil
+// BuildStateGraph builds a graph by adding states to an already-existing graph, using a transition function
+func (g *Graph[T]) BuildStateGraph(transitionFunc func(T) []Edge[T]) {
 	g.checkInit()
-	open := []T{initialState}
+	var open []T
+	for node := range g.Nodes {
+		open = append(open, node)
+	}
 	visited := make(map[T]struct{})
 	for len(open) > 0 {
 		s := open[0]
@@ -57,7 +59,14 @@ func (g *Graph[T]) BuildStateGraph(initialState T, transitionFunc func(T) []Edge
 			open = append(open, tr.Dest)
 		}
 	}
+}
+
+// CreateStateGraph creates a new graph using an initial state and a transition function
+func (g *Graph[T]) CreateStateGraph(initialState T, transitionFunc func(T) []Edge[T]) {
+	g.Nodes = nil
+	g.checkInit()
 	g.AddNode(initialState)
+	g.BuildStateGraph(transitionFunc)
 }
 
 // Dijkstra finds the cost to all reachable states from a given source, along with "prev" data that can be used
