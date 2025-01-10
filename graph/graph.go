@@ -78,11 +78,7 @@ func (g *Graph[T]) Dijkstra(source T) (map[T]uint64, map[T][]T) {
 	dist[source] = 0
 	Q.Insert(source, 0)
 	for v := range g.Nodes {
-		if v != source {
-			prev[v] = nil
-			dist[v] = math.MaxUint64
-			Q.Insert(v, math.MaxUint64)
-		}
+		Q.Insert(v, math.MaxUint64)
 	}
 	for Q.Len() > 0 {
 		u, err := Q.Pop()
@@ -91,13 +87,26 @@ func (g *Graph[T]) Dijkstra(source T) (map[T]uint64, map[T][]T) {
 		}
 		for _, e := range g.Nodes[u] {
 			v := e.Dest
-			alt := dist[u] + e.Cost
-			if alt < dist[v] {
+			du, ok := dist[u]
+			alt := du + e.Cost
+			if !ok {
+				du = math.MaxUint64
+				alt = du
+			}
+			dv, ok := dist[v]
+			if !ok {
+				dv = math.MaxUint64
+			}
+			if alt < dv {
 				prev[v] = []T{u}
 				dist[v] = alt
 				Q.UpdatePriority(v, alt)
 			} else if alt == dist[v] {
-				prev[v] = append(prev[v], u)
+				pv, ok := prev[v]
+				if !ok {
+					pv = nil
+				}
+				prev[v] = append(pv, u)
 			}
 		}
 	}
