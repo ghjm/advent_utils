@@ -2,6 +2,7 @@ package graph
 
 import (
 	"fmt"
+	utils "github.com/ghjm/advent_utils"
 	"math"
 )
 
@@ -12,6 +13,14 @@ type Edge[T comparable] struct {
 
 type Graph[T comparable] struct {
 	Nodes map[T][]Edge[T]
+}
+
+type DirectedGraph[T comparable] struct {
+	Graph[T]
+}
+
+type UndirectedGraph[T comparable] struct {
+	Graph[T]
 }
 
 // checkInit checks that the graph data is initialized
@@ -38,8 +47,14 @@ func (g *Graph[T]) AddEdge(from, to T, cost uint64) {
 	g.Nodes[from] = append(g.Nodes[from], Edge[T]{Dest: to, Cost: cost})
 }
 
+// AddEdge adds an edge to the graph
+func (g *UndirectedGraph[T]) AddEdge(from, to T, cost uint64) {
+	g.Graph.AddEdge(from, to, cost)
+	g.Graph.AddEdge(to, from, cost)
+}
+
 // BuildStateGraph builds a graph by adding states to an already-existing graph, using a transition function
-func (g *Graph[T]) BuildStateGraph(transitionFunc func(T) []Edge[T]) {
+func (g *DirectedGraph[T]) BuildStateGraph(transitionFunc func(T) []Edge[T]) {
 	g.checkInit()
 	var open []T
 	for node := range g.Nodes {
@@ -62,7 +77,7 @@ func (g *Graph[T]) BuildStateGraph(transitionFunc func(T) []Edge[T]) {
 }
 
 // CreateStateGraph creates a new graph using an initial state and a transition function
-func (g *Graph[T]) CreateStateGraph(initialState T, transitionFunc func(T) []Edge[T]) {
+func (g *DirectedGraph[T]) CreateStateGraph(initialState T, transitionFunc func(T) []Edge[T]) {
 	g.Nodes = nil
 	g.checkInit()
 	g.AddNode(initialState)
@@ -113,6 +128,38 @@ func (g *Graph[T]) Dijkstra(source T) (map[T]uint64, map[T][]T) {
 	return dist, prev
 }
 
+// ConnectedComponents returns a list of sub-graphs, each of which is connected
+func (g *UndirectedGraph[T]) ConnectedComponents() []*UndirectedGraph[T] {
+	open := make(map[T]struct{})
+	for node := range g.Nodes {
+		open[node] = struct{}{}
+	}
+	var subGraphs []*UndirectedGraph[T]
+	for len(open) > 0 {
+		subOpen := make(map[T]struct{})
+		subOpen[utils.MustGetArbitraryKey(open)] = struct{}{}
+		subVisited := make(map[T]struct{})
+		var curSub UndirectedGraph[T]
+		for len(subOpen) > 0 {
+			n := utils.MustPopArbitraryKey(subOpen)
+			subVisited[n] = struct{}{}
+			delete(open, n)
+			for _, e := range g.Nodes[n] {
+				curSub.AddEdge(n, e.Dest, e.Cost)
+				_, ok := subVisited[e.Dest]
+				if !ok {
+					subOpen[e.Dest] = struct{}{}
+				}
+			}
+		}
+		if len(curSub.Nodes) > 0 {
+			subGraphs = append(subGraphs, &curSub)
+		}
+	}
+	return subGraphs
+}
+
+// Copy copies the graph to a new graph
 func (g *Graph[T]) Copy() *Graph[T] {
 	g.checkInit()
 	var ng Graph[T]
@@ -121,4 +168,18 @@ func (g *Graph[T]) Copy() *Graph[T] {
 		ng.Nodes[k] = v[:]
 	}
 	return &ng
+}
+
+// Copy copies the graph to a new graph
+func (g *DirectedGraph[T]) Copy() *DirectedGraph[T] {
+	return &DirectedGraph[T]{Graph[T]{
+		Nodes: g.Graph.Copy().Nodes,
+	}}
+}
+
+// Copy copies the graph to a new graph
+func (g *UndirectedGraph[T]) Copy() *UndirectedGraph[T] {
+	return &UndirectedGraph[T]{Graph[T]{
+		Nodes: g.Graph.Copy().Nodes,
+	}}
 }
