@@ -1,22 +1,13 @@
 package board
 
 import (
+	"context"
 	"fmt"
+	"strings"
+
 	"github.com/ghjm/advent_utils"
 	"golang.org/x/exp/constraints"
-	"strings"
 )
-
-// BoardStorage is an interface to pluggable back-end storage for a Board
-type BoardStorage[KT constraints.Integer, VT any] interface {
-	Allocate(width, height KT, emptyVal VT)
-	Set(p utils.Point[KT], v VT)
-	Get(p utils.Point[KT]) (VT, bool)
-	Delete(p utils.Point[KT])
-	GetOrDefault(p utils.Point[KT], def VT) VT
-	Iterate(iterFunc func(p utils.Point[KT], v VT) bool)
-	CopyToBoardStorage() BoardStorage[KT, VT]
-}
 
 // Board is an abstraction of a 2D map of discrete map points
 type Board[KT constraints.Integer, VT any] struct {
@@ -117,6 +108,11 @@ func NewStdBoard(options ...func(board *BoardOptions[int, rune])) *StdBoard {
 	}
 }
 
+// Compare returns true if the boards are identical
+func (b *StdBoard) Compare(b2 *StdBoard) bool {
+	return b.Board.Compare(&b2.Board)
+}
+
 // RunePlusData is the data type for elements of a RunePlusBoard
 type RunePlusData[ET any] struct {
 	Value rune
@@ -151,6 +147,11 @@ func NewRunePlusBoard[KT constraints.Integer, ET any](options ...func(board *Boa
 		}
 	}
 	return b
+}
+
+// Storage returns the underlying storage of this Board
+func (b *Board[KT, VT]) Storage() BoardStorage[KT, VT] {
+	return b.storage
 }
 
 // Transform iterates through each point of a Board, allowing each to be changed.  The changes are batched till the end.
@@ -358,9 +359,14 @@ func (b *Board[KT, VT]) SetAndExpandBounds(p utils.Point[KT], v VT) {
 	b.ExpandBounds(p)
 }
 
-// Iterate calls a function for every populated location on the board
+// Iterate calls a function for every populated location on the board.  No guarantees are made about ordering.
 func (b *Board[KT, VT]) Iterate(iterFunc func(p utils.Point[KT], v VT) bool) {
 	b.storage.Iterate(iterFunc)
+}
+
+// IterateOrdered calls a function for every populated location on the board, in deterministic order
+func (b *Board[KT, VT]) IterateOrdered(iterFunc func(p utils.Point[KT], v VT) bool) {
+	b.storage.IterateOrdered(iterFunc)
 }
 
 // IterateRunes calls a function for every populated location on the board, returning only the rune
@@ -390,6 +396,8 @@ func (b *Board[KT, VT]) Copy() *Board[KT, VT] {
 	var nb Board[KT, VT]
 	nb.storage = b.storage.CopyToBoardStorage()
 	nb.emptyVal = b.emptyVal
+	nb.compFunc = b.compFunc
+	nb.convFunc = b.convFunc
 	if b.bounds != nil {
 		nb.bounds = &utils.Rectangle[KT]{
 			P1: utils.Point[KT]{
@@ -478,6 +486,58 @@ func (b *Board[KT, VT]) Diagonals(p utils.Point[KT], includeOffBoard bool) []uti
 	return results
 }
 
+// Compare compares the whole board with another and returns true if they are identical.
+func (b *Board[KT, VT]) Compare(b2 *Board[KT, VT]) bool {
+	if b.compFunc == nil {
+		panic("compFunc not defined")
+	}
+	if b.Bounds() != b2.Bounds() {
+		return false
+	}
+	type iterFuncParam struct {
+		p utils.Point[KT]
+		v VT
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	makeIterFunc := func(c chan *iterFuncParam) func(p utils.Point[KT], v VT) bool {
+		return func(p utils.Point[KT], v VT) bool {
+			select {
+			case c <- &iterFuncParam{p, v}:
+				return true
+			case <-ctx.Done():
+				return false
+			}
+		}
+	}
+	bChan := make(chan *iterFuncParam)
+	go func() {
+		b.IterateOrdered(makeIterFunc(bChan))
+		close(bChan)
+	}()
+	b2Chan := make(chan *iterFuncParam)
+	go func() {
+		b2.IterateOrdered(makeIterFunc(b2Chan))
+		close(b2Chan)
+	}()
+	for {
+		v1, ok1 := <-bChan
+		v2, ok2 := <-b2Chan
+		if !ok1 && !ok2 {
+			return true
+		}
+		if !ok1 || !ok2 {
+			return false
+		}
+		if v1.p != v2.p {
+			return false
+		}
+		if !b.compFunc(v1.v, v2.v) {
+			return false
+		}
+	}
+}
+
 // Search performs a flood fill type search of a board from a given start point and with a given neighbors function.
 func (b *Board[KT, VT]) Search(start utils.Point[KT], neighbors func(p utils.Point[KT]) []utils.Point[KT]) map[utils.Point[KT]]struct{} {
 	open := []utils.Point[KT]{start}
@@ -556,76 +616,4 @@ func (b *RunePlusBoard[KT, ET]) Print() {
 	b.Board.Print(func(r RunePlusData[ET]) rune {
 		return r.Value
 	})
-}
-
-type FlatBoard struct {
-	board    [][]rune
-	emptyVal rune
-}
-
-func (fb *FlatBoard) Allocate(width, height int, emptyVal rune) {
-	fb.board = make([][]rune, 0, height)
-	for y := 0; y < height; y++ {
-		line := make([]rune, 0, width)
-		for x := 0; x < width; x++ {
-			line = append(line, emptyVal)
-		}
-		fb.board = append(fb.board, line)
-	}
-	fb.emptyVal = emptyVal
-}
-
-func (fb *FlatBoard) GetBounds() utils.StdRectangle {
-	return utils.StdRectangle{
-		P1: utils.Point[int]{},
-		P2: utils.Point[int]{
-			X: len(fb.board[0]) - 1,
-			Y: len(fb.board) - 1,
-		},
-	}
-}
-
-func (fb *FlatBoard) Set(p utils.StdPoint, v rune) {
-	fb.board[p.Y][p.X] = v
-}
-
-func (fb *FlatBoard) Get(p utils.StdPoint) (rune, bool) {
-	if p.X >= 0 && p.X < len(fb.board[0]) && p.Y >= 0 && p.Y < len(fb.board) {
-		return fb.board[p.Y][p.X], true
-	}
-	return 0, false
-}
-
-func (fb *FlatBoard) Delete(p utils.StdPoint) {
-	fb.Set(p, fb.emptyVal)
-}
-
-func (fb *FlatBoard) GetOrDefault(p utils.StdPoint, def rune) rune {
-	if p.X >= 0 && p.X < len(fb.board[0]) && p.Y >= 0 && p.Y < len(fb.board) {
-		return fb.board[p.Y][p.X]
-	}
-	return def
-}
-
-func (fb *FlatBoard) Iterate(iterFunc func(p utils.StdPoint, v rune) bool) {
-	for y := 0; y < len(fb.board); y++ {
-		for x := 0; x < len(fb.board[0]); x++ {
-			if !iterFunc(utils.StdPoint{x, y}, fb.board[y][x]) {
-				return
-			}
-		}
-	}
-}
-
-func (fb *FlatBoard) CopyToBoardStorage() BoardStorage[int, rune] {
-	nb := new(FlatBoard)
-	nb.emptyVal = fb.emptyVal
-	for y := 0; y < len(fb.board); y++ {
-		var line []rune
-		for x := 0; x < len(fb.board[0]); x++ {
-			line = append(line, fb.board[y][x])
-		}
-		nb.board = append(nb.board, line)
-	}
-	return nb
 }
